@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DABEST.Engine</title>
+  <style>
+    :root { --neon: #00ff41; --bg: #010201; --panel: #0a0f0a; --accent: #00ff9d; --err: #ff4444; }
+    body { background: var(--bg); color: var(--neon); font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+    .container { width: 95%; max-width: 850px; }
+    .card { background: var(--panel); border: 1px solid #1e4a1e; border-radius: 12px; padding: 30px; box-shadow: 0 0 30px rgba(0,255,65,0.05); margin-bottom: 20px; text-align: center; }
+    .header { font-size: 2.2rem; letter-spacing: 6px; margin-bottom: 5px; font-weight: 900; text-transform: uppercase; }
+    
+    /* Updated branding text style */
+    #dynamic-desc { color: var(--accent); font-size: 1.1rem; margin-bottom: 25px; font-weight: bold; letter-spacing: 1px; min-height: 1.5em; text-transform: uppercase; }
+    
+    input { background: #000; border: 1px solid #1e4a1e; color: var(--neon); padding: 15px; width: calc(100% - 32px); border-radius: 8px; margin-bottom: 20px; font-size: 1rem; outline: none; transition: 0.3s; }
+    input:focus { border-color: var(--accent); box-shadow: 0 0 15px rgba(0,255,157,0.1); }
+    
+    .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    button { background: var(--neon); color: #000; border: none; padding: 16px; font-weight: 900; cursor: pointer; border-radius: 8px; text-transform: uppercase; transition: 0.2s; font-size: 0.9rem; }
+    button:hover { filter: brightness(1.2); transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,255,65,0.2); }
+    .btn-secondary { background: transparent; border: 1px solid var(--neon); color: var(--neon); }
+
+    #ai-analysis { background: rgba(0, 255, 157, 0.07); border: 1px solid var(--accent); padding: 25px; border-radius: 10px; margin-top: 25px; display: none; color: #fff; line-height: 1.6; text-align: left; animation: fadeIn 0.4s ease; }
+    
+    .result-item { background: rgba(255,255,255,0.02); margin-top: 20px; padding: 20px; border-radius: 10px; border-left: 3px solid var(--accent); text-align: left; transition: 0.3s; }
+    .result-item:hover { background: rgba(255,255,255,0.04); }
+    .result-title { font-weight: bold; color: #fff; font-size: 1.2rem; margin-bottom: 8px; text-decoration: none; display: block; }
+    .result-snippet { font-size: 0.95rem; color: #bbb; margin-bottom: 12px; }
+    .source-link { color: var(--accent); text-decoration: none; font-size: 0.85rem; font-family: monospace; opacity: 0.8; word-break: break-all; }
+    
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">DABEST.<span style="color:#fff">ENGINE</span></div>
+  
+  <div id="dynamic-desc">Groq-powered Search Engine.</div>
+
+  <div class="card">
+    <input id="searchQuery" placeholder="Insert input here..." onkeypress="if(event.key==='Enter') executeNeuralCrawl()">
+    <div class="btn-group">
+      <button onclick="executeNeuralCrawl()">Crawl with DABEST</button>
+      <button class="btn-secondary" onclick="copyToClipboard()">Copy Results</button>
+    </div>
+    
+    <div id="ai-analysis"></div>
+  </div>
+
+  <div id="results"></div>
+</div>
+
+<script>
+  const ZENSERP_KEY = "1268f2d0-340b-11f1-a975-738992409590";
+  const GROQ_KEY = "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";
+  const GROQ_MODEL = "llama-3.1-8b-instant";
+
+  function updateStatus(msg, isError = false) {
+    const statusEl = document.getElementById('dynamic-desc');
+    statusEl.style.color = isError ? "var(--err)" : "var(--accent)";
+    statusEl.innerHTML = msg;
+  }
+
+  async function executeNeuralCrawl() {
+    const query = document.getElementById('searchQuery').value;
+    const aiBox = document.getElementById('ai-analysis');
+    const resultsDiv = document.getElementById('results');
+
+    if (!query) {
+      updateStatus("⚠ Input required.", true);
+      return;
+    }
+
+    aiBox.style.display = "none";
+    resultsDiv.innerHTML = "";
+    updateStatus(`Crawling: ${query}...`);
+
+    try {
+      // 1. Web Retrieval
+      const zResponse = await fetch(`https://app.zenserp.com/api/v2/search?apikey=${ZENSERP_KEY}&q=${encodeURIComponent(query)}`);
+      if (!zResponse.ok) throw new Error("Connection Failed.");
+      const data = await zResponse.json();
+
+      if (!data.organic || data.organic.length === 0) throw new Error("No results found.");
+
+      updateStatus("Analyzing Data Streams...");
+      renderResults(data.organic);
+
+      // 2. Neural Synthesis
+      const context = data.organic.slice(0, 5).map(i => i.description).join(" ");
+      const gResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${GROQ_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: GROQ_MODEL,
+          messages: [{ role: "user", content: `Summarize this in 3 technical points: ${context}` }]
+        })
+      });
+
+      if (!gResponse.ok) throw new Error("Groq Synthesis Failed.");
+      
+      const gData = await gResponse.json();
+      aiBox.style.display = "block";
+      aiBox.innerHTML = `<strong>NEURAL RESULTS:</strong><br>${gData.choices[0].message.content.replace(/\n/g, '<br>')}`;
+      updateStatus("Groq-powered Search Engine."); // Revert to brand text after success
+
+    } catch (err) {
+      updateStatus(`ERROR: ${err.message}`, true);
+    }
+  }
+
+  function renderResults(items) {
+    const res = document.getElementById('results');
+    res.innerHTML = "<h3 style='margin: 30px 0 10px 0; letter-spacing: 2px;'>MAPPED OUTPUT:</h3>";
+    items.forEach(item => {
+      res.innerHTML += `
+        <div class="result-item">
+          <a href="${item.url}" target="_blank" class="result-title">${item.title}</a>
+          <div class="result-snippet">${item.description || "No metadata provided."}</div>
+          <a href="${item.url}" target="_blank" class="source-link">${item.url}</a>
+        </div>`;
+    });
+  }
+
+  function copyToClipboard() {
+    const results = document.getElementById('results').innerText;
+    const ai = document.getElementById('ai-analysis').innerText;
+    if (!results) return updateStatus("⚠ No data.", true);
+    
+    const fullText = `NEURAL SUMMARY:\n${ai}\n\nSOURCES:\n${results}`;
+    navigator.clipboard.writeText(fullText).then(() => updateStatus("✓ Copied."));
+  }
+</script>
+
+</body>
+</html>
